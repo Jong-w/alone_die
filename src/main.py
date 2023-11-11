@@ -11,6 +11,7 @@ Authors:
 This software may be used only for research evaluation purposes.
 For other purposes (e.g., commercial), please contact the authors.
 """
+
 import argparse
 import io
 import json
@@ -27,6 +28,9 @@ from data import load_data, is_continuous, is_large, to_edge_tensor
 from models.svga import SVGA, StochasticSVGA
 from utils import str2bool, to_device
 
+import gc
+gc.collect()
+torch.cuda.empty_cache()
 
 def sample_y_nodes(num_nodes, y, y_ratio, seed):
     """
@@ -149,12 +153,12 @@ def parse_args():
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='cora')
+    parser.add_argument('--data', type=str, default='pamap2')
     parser.add_argument('--y-ratio', type=float, default=0.0)
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--sampling', type=str2bool, default=False)
 
-    parser.add_argument('--gpu', type=int, default=0)
+    parser.add_argument('--gpu', type=int, default=1)
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--out', type=str, default='../out')
@@ -172,7 +176,7 @@ def parse_args():
     parser.add_argument('--patience', type=int, default=0)
     parser.add_argument('--updates', type=int, default=10)
     parser.add_argument('--conv', type=str, default='gcn')
-    parser.add_argument('--x-loss', type=str, default='balanced')
+    parser.add_argument('--x-loss', type=str, default='gaussian')
     parser.add_argument('--x-type', type=str, default='diag')
     return parser.parse_args()
 
@@ -192,6 +196,11 @@ def main():
     edge_index, x_all, y_all, trn_nodes, val_nodes, test_nodes = load_data(
         args.data, split=(0.4, 0.1, 0.5), seed=args.seed)
 
+    trn_nodes = np.array(trn_nodes)
+    val_nodes = np.array(val_nodes)
+    test_nodes = np.array(test_nodes)
+
+
     if is_large(args.data):  # Convert edges if a dataset is large.
         edge_index = to_edge_tensor(edge_index)
 
@@ -200,7 +209,7 @@ def main():
 
     num_nodes = x_all.size(0)
     num_features = x_all.size(1)
-    num_classes = (y_all.max() + 1).item()
+    num_classes = int((y_all.max() + 1).item())
 
     x_nodes = trn_nodes
     x_features = x_all[x_nodes]
@@ -221,12 +230,12 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    device = to_device(args.gpu)
+    device = to_device("cuda" if torch.cuda.is_available else "cpu")
     edge_index = edge_index.to(device)
     model = model.to(device)
-    x_nodes = x_nodes.to(device)
-    x_all = x_all.to(device)
-    x_features = x_features.to(device)
+    x_nodes = torch.as_tensor(x_nodes).to(device)
+    x_all = torch.as_tensor(x_all).to(device)
+    x_features = torch.as_tensor(x_features).to(device)
 
     if y_nodes is not None:
         y_nodes = y_nodes.to(device)
@@ -249,8 +258,10 @@ def main():
         for nodes in [x_nodes, val_nodes, test_nodes]:
             if is_continuous(args.data):
                 score = to_rmse(x_hat_[nodes], x_all[nodes])
-            elif args.data == 'steam':
+            elif (args.data == 'steam'):
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=3)
+            elif (args.data == 'pamap2'):
+                score = to_recall(x_hat_[nodes], x_all[nodes], k=1)
             else:
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=10)
             out_list.append(score)

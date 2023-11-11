@@ -21,7 +21,8 @@ def to_device(gpu):
     Return a PyTorch device from a GPU index.
     """
     if gpu is not None and torch.cuda.is_available():
-        return torch.device(f'cuda:{gpu}')
+        return torch.device('cuda')
+        #return torch.device(f'cuda:{gpu}')
     else:
         return torch.device('cpu')
 

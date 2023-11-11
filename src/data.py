@@ -22,6 +22,8 @@ from sklearn.model_selection import train_test_split
 from torch_geometric import datasets
 from torch_geometric.utils import to_undirected
 from torch_sparse import SparseTensor
+from scipy import sparse
+from scipy.interpolate import interp1d
 
 
 def is_large(data):
@@ -90,6 +92,49 @@ def load_steam(root):
     edge_index = torch.from_numpy(np.stack([rows, cols], axis=0))
     return Namespace(data=Namespace(x=features, y=labels, edge_index=edge_index))
 
+def edge(grid_size, stride):
+    edge_index = []
+    for i in range(0, grid_size, stride):
+        for j in range(0, grid_size, stride):
+            current = i * grid_size + j
+            if j < grid_size - stride:
+                edge_index.append([current, current + stride])
+            if i < grid_size - stride:
+                edge_index.append([current, current + grid_size * stride])
+            if j < grid_size - stride and i < grid_size - stride:
+                edge_index.append([current, current + grid_size * stride + stride])
+            if j > 0 and i < grid_size - stride:
+                edge_index.append([current, current + grid_size * stride - stride])
+            edge_idx = torch.tensor(edge_index, dtype=torch.long).t().contiguous()
+            return edge_idx
+
+def load_pamap2(root):
+    """
+    Load the Steam dataset with manual preprocessing.
+    """
+    data1 = np.loadtxt(r"C:\Users\gpu_win\PycharmProjects\alone_die\SVGA\data\PAMAP2\PAMAP2\subject101.dat")
+    data2 = np.loadtxt(r"C:\Users\gpu_win\PycharmProjects\alone_die\SVGA\data\PAMAP2\PAMAP2\subject102.dat")
+    data3 = np.loadtxt(r"C:\Users\gpu_win\PycharmProjects\alone_die\SVGA\data\PAMAP2\PAMAP2\subject103.dat")
+    data4 = np.loadtxt(r"C:\Users\gpu_win\PycharmProjects\alone_die\SVGA\data\PAMAP2\PAMAP2\subject104.dat")
+    data5 = np.loadtxt(r"C:\Users\gpu_win\PycharmProjects\alone_die\SVGA\data\PAMAP2\PAMAP2\subject105.dat")
+    data = np.concatenate((data1, data2, data3, data4, data5))
+    data = data1
+    data_hand = data[:, [3,4]].flatten()  #[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    data_chest = data[:, [20,21]].flatten()  #[20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36]
+    data_ankle = data[:, [37,38]].flatten()  #[37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53]
+    np.isnan(np.nan_to_num(data_hand, copy=False))
+    np.isnan(np.nan_to_num(data_chest, copy=False))
+    np.isnan(np.nan_to_num(data_ankle, copy=False))
+    #features = np.vstack((data_hand, data_chest, data_ankle)) #원래의 features
+    features = np.vstack((data_chest, data_ankle))
+    #features = sparse.csr_matrix(features)
+    features = torch.from_numpy(features).float().reshape(-1,2)
+    #labels = data[:, 1] #원래의 labels
+    labels = torch.from_numpy(data_hand).float()
+    edge_index = edge(5, 2)
+
+    return Namespace(data=Namespace(x=features, y=labels, edge_index=edge_index))
+
 
 def load_arxiv(root):
     """
@@ -124,6 +169,8 @@ def load_data(dataset, split=None, seed=None, verbose=False, normalize=False,
         data = datasets.Coauthor(root, 'CS')
     elif dataset == 'arxiv':
         data = load_arxiv(root)
+    elif dataset == 'pamap2':
+        data = load_pamap2(root)
     else:
         raise ValueError(dataset)
 
@@ -153,10 +200,12 @@ def load_data(dataset, split=None, seed=None, verbose=False, normalize=False,
     elif len(split) == 3 and sum(split) == 1:
         trn_size, val_size, test_size = split
         indices = np.arange(node_x.shape[0])
-        trn_nodes, test_nodes = train_test_split(indices, test_size=test_size, random_state=seed,
-                                                 stratify=node_y)
-        trn_nodes, val_nodes = train_test_split(trn_nodes, test_size=val_size / (trn_size + val_size),
-                                                random_state=seed, stratify=node_y[trn_nodes])
+        trn_nodes, test_nodes = train_test_split(indices, test_size=test_size, random_state=seed)
+        #trn_nodes, test_nodes = train_test_split(indices, test_size=test_size, random_state=seed,
+        #                                         stratify=node_y)
+        trn_nodes, val_nodes = train_test_split(trn_nodes, test_size=val_size / (trn_size + val_size), random_state=seed)
+        #trn_nodes, val_nodes = train_test_split(trn_nodes, test_size=val_size / (trn_size + val_size),
+        #                                        random_state=seed, stratify=node_y[trn_nodes])
 
         trn_nodes = torch.from_numpy(trn_nodes)
         val_nodes = torch.from_numpy(val_nodes)
