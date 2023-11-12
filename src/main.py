@@ -18,11 +18,13 @@ import json
 import os
 
 import torch
+import torch.nn as nn
 from sklearn.metrics import ndcg_score
 from sklearn.model_selection import train_test_split
 from torch import optim
 import numpy as np
 import pandas as pd
+import os
 
 from data import load_data, is_continuous, is_large, to_edge_tensor
 from models.svga import SVGA, StochasticSVGA
@@ -67,7 +69,7 @@ def to_recall(input, target, k=10):
     """
     Compute the recall score from a prediction.
     """
-    pred = input.topk(k, dim=1, sorted=False)[1]
+    pred = input.topk(k=k, dim=1, sorted=False)[1]
     row_index = torch.arange(target.size(0))
     target_list = []
     for i in range(k):
@@ -148,6 +150,7 @@ def evaluate_last(data, model, edge_index, test_nodes, true_features):
         return scores
 
 
+
 def parse_args():
     """
     Parse command line arguments.
@@ -158,7 +161,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=None)
     parser.add_argument('--sampling', type=str2bool, default=False)
 
-    parser.add_argument('--gpu', type=int, default=1)
+    parser.add_argument('--gpu', type=int, default=0)
     parser.add_argument('--silent', action='store_true', default=False)
     parser.add_argument('--save', action='store_true', default=False)
     parser.add_argument('--out', type=str, default='../out')
@@ -171,13 +174,15 @@ def parse_args():
     parser.add_argument('--dropout', type=float, default=0.5)
 
     parser.add_argument('--layers', type=int, default=2)
-    parser.add_argument('--hidden-size', type=int, default=256)
+    parser.add_argument('--hidden-size', type=int, default=64)
     parser.add_argument('--epochs', type=int, default=2000)
     parser.add_argument('--patience', type=int, default=0)
     parser.add_argument('--updates', type=int, default=10)
     parser.add_argument('--conv', type=str, default='gcn')
     parser.add_argument('--x-loss', type=str, default='gaussian')
     parser.add_argument('--x-type', type=str, default='diag')
+    parser.add_argument('--feature_lstm', type=str, default=17*3)
+
     return parser.parse_args()
 
 
@@ -186,6 +191,7 @@ def main():
     Main function.
     """
     args = parse_args()
+    #os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:1024"
 
     if args.seed is not None:
         np.random.seed(args.seed)
@@ -195,6 +201,26 @@ def main():
 
     edge_index, x_all, y_all, trn_nodes, val_nodes, test_nodes = load_data(
         args.data, split=(0.4, 0.1, 0.5), seed=args.seed)
+
+    device = to_device(args.gpu)
+
+    class LSTMModel(nn.Module):
+        def __init__(self, input_size, hidden_size, num_layers, output_size):
+            super(LSTMModel, self).__init__()
+            self.hidden_size = hidden_size
+            self.num_layers = num_layers
+            self.lstm = nn.LSTM(input_size, hidden_size, num_layers = 1, batch_first=True)
+
+        def forward(self, x):
+            h0 = torch.zeros(1, self.hidden_size).to(device)
+            c0 = torch.zeros(1, self.hidden_size).to(device)
+            out, _ = self.lstm(x, (h0, c0)).to(device)
+            return out
+
+    lstm_encoder_model = LSTMModel(args.feature_lstm, args.hidden_size, 1, 3).to(device)
+    lstm_decoder_model = LSTMModel(3, args.hidden_size, 1, args.feature_lstm).to(device)
+
+    x_all = lstm_encoder_model(x_all.to(device))
 
     trn_nodes = np.array(trn_nodes)
     val_nodes = np.array(val_nodes)
@@ -230,7 +256,6 @@ def main():
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    device = to_device("cuda" if torch.cuda.is_available else "cpu")
     edge_index = edge_index.to(device)
     model = model.to(device)
     x_nodes = torch.as_tensor(x_nodes).to(device)
@@ -254,14 +279,15 @@ def main():
     def evaluate_model():
         model.eval()
         x_hat_, _ = model(edge_index)
+        x_hat_ = lstm_decoder_model(x_hat_.to(device))
         out_list = []
         for nodes in [x_nodes, val_nodes, test_nodes]:
             if is_continuous(args.data):
                 score = to_rmse(x_hat_[nodes], x_all[nodes])
             elif (args.data == 'steam'):
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=3)
-            elif (args.data == 'pamap2'):
-                score = to_recall(x_hat_[nodes], x_all[nodes], k=1)
+#            elif (args.data == 'pamap2'):
+#                score = to_recall(x_hat_[nodes], x_all[nodes], k=1)
             else:
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=10)
             out_list.append(score)

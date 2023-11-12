@@ -141,6 +141,8 @@ class Encoder(nn.Module):
             self.model = nn.Linear(num_features, hidden_size)
         elif conv in ['gcn', 'sage', 'gat']:
             self.model = GNN(num_features, hidden_size, num_layers, hidden_size, dropout, conv=conv)
+        elif conv =='lstm':
+            self.model = nn.LSTM(num_features, hidden_size)
         else:
             raise ValueError()
 
