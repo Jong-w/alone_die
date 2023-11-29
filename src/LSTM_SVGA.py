@@ -176,7 +176,7 @@ def parse_args():
     parser.add_argument('--dropout', type=float, default=0.5)
 
     parser.add_argument('--layers', type=int, default=2)
-    parser.add_argument('--hidden-size', type=int, default=256)
+    parser.add_argument('--hidden-size', type=int, default=4)
     parser.add_argument('--epochs', type=int, default=2000)
     parser.add_argument('--patience', type=int, default=0)
     parser.add_argument('--updates', type=int, default=10)

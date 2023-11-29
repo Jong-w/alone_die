@@ -22,7 +22,7 @@ def to_device(gpu):
     """
     if gpu is not None and torch.cuda.is_available():
         #return torch.device('cuda')
-        return torch.device(f'cuda:{gpu}')
+        return torch.device(f'cuda')
     else:
         return torch.device('cpu')
 
