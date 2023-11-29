@@ -272,8 +272,6 @@ def main():
                 score = to_rmse(x_hat_[nodes], x_all[nodes])
             elif (args.data == 'steam'):
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=3)
-            elif (args.data == 'pamap2'):
-                score = to_rmse(x_hat_[nodes], x_all[nodes])
             else:
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=10)
             out_list.append(score)
