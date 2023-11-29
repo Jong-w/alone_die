@@ -89,14 +89,15 @@ class Features(nn.Module):
         Make a degree-based feature matrix.
         """
         adj_t = SparseTensor(row=edge_index[0], col=edge_index[1],
-                             sparse_sizes=(self.num_nodes, self.num_nodes))
+                             sparse_sizes=(self.num_nodes, self.num_nodes)).to("cuda")
         degree = adj_t.sum(dim=0).long()
-        degree_list = torch.unique(degree)
-        degree_map = torch.zeros_like(degree)
-        degree_map[degree_list] = torch.arange(len(degree_list))
-        indices = torch.stack([torch.arange(self.num_nodes), degree_map[degree]], dim=0)
-        values = torch.ones(indices.size(1))
+        degree_list = torch.unique(degree).to("cuda")
+        degree_map = torch.zeros_like(degree).to("cuda")
+        degree_map[degree_list] = torch.arange(len(degree_list)).to("cuda")
+        indices = torch.stack([torch.arange(self.num_nodes).to("cuda"), degree_map[degree]], dim=0).to("cuda")
+        values = torch.ones(indices.size(1)).to("cuda")
         shape = self.num_nodes, indices[1, :].max() + 1
+        shape = (shape[0], int(shape[1]))
         return indices, values, shape
 
     def to_diag_degree_features(self, edge_index):
@@ -146,7 +147,7 @@ class Encoder(nn.Module):
 
     def forward(self, features, edge_index):
         if isinstance(self.model, nn.Linear):
-            return self.model(features)
+            return self.model(self)
         else:
             return self.model(features, edge_index)
 
@@ -250,19 +251,35 @@ class SVGA(nn.Module):
 
     def __init__(self, edge_index, num_nodes, num_features, num_classes, hidden_size=256, lamda=1,
                  beta=0.1, num_layers=2, conv='gcn', dropout=0.5, x_type='diag', x_loss='balanced',
-                 emb_norm='unit', obs_nodes=None, obs_features=None, dec_bias=False):
+                 emb_norm='unit', obs_nodes=None, obs_features=None, dec_bias=False): #num_columns=1
         """
         Class initializer.
         """
         super().__init__()
         self.lamda = lamda
         self.dropout = nn.Dropout(dropout)
+        #self.num_columns = num_columns
+        self.num_nodes = num_nodes
+        self.x_type = x_type
+        self.obs_nodes = obs_nodes
+        obs_features = torch.as_tensor(obs_features).to("cuda")
+        self.obs_features = obs_features
 
         self.features = Features(edge_index, num_nodes, x_type, obs_nodes, obs_features)
+        self.feature_dim = 2
+        self.encoding_lstm_1 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
+        self.encoding_lstm_2 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
+        #self.encoding_lstm_3 = nn.LSTM(input_size=1, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
+
+        self.decoding_lstm_1 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False).to("cuda")
+        self.decoding_lstm_2 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False).to("cuda")
+        #self.decoding_lstm_3 = nn.LSTM(input_size=1, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
+
+
         self.encoder = Encoder(self.features.shape[1], hidden_size, num_layers, dropout, conv)
         self.emb_norm = EmbNorm(hidden_size, emb_norm)
 
-        self.x_decoder = nn.Linear(hidden_size, num_features, bias=dec_bias)
+        self.x_decoder = nn.Linear(hidden_size, 2, bias=dec_bias)
         self.y_decoder = nn.Linear(hidden_size, num_classes, bias=dec_bias)
 
         self.x_loss = to_x_loss(x_loss)
@@ -273,10 +290,22 @@ class SVGA(nn.Module):
         """
         Run forward propagation.
         """
-        z = self.emb_norm(self.encoder(self.features(), edge_index))
+        #z = self.encoder_lstm(self.features())
+        z1, _ = self.encoding_lstm_1(self.obs_features[:, :self.feature_dim])
+        z2, _ = self.encoding_lstm_1(self.obs_features[:, self.feature_dim:])
+        #z, _ = self.encoding_lstm_1(self.obs_features[:, 2, :])
+        z = torch.cat([z1, z2], dim=1)
+
+        z_ = Features(edge_index, self.num_nodes, self.x_type, self.obs_nodes, z)
+        #z = z().unsqueeze(2)
+
+        z = self.emb_norm(self.encoder(z_(), edge_index))
         z_dropped = self.dropout(z)
         x_hat = self.x_decoder(z_dropped)
         y_hat = self.y_decoder(z_dropped)
+        x_hat_1, _ = self.decoding_lstm_1(x_hat[:, 0].unsqueeze(1))
+        x_hat_2, _ = self.decoding_lstm_2(x_hat[:, 1].unsqueeze(1))
+        x_hat = torch.cat([x_hat_1, x_hat_2], dim=1)
         if for_loss:
             return z, x_hat, y_hat
         return x_hat, y_hat

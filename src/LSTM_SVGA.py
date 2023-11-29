@@ -141,6 +141,8 @@ def evaluate_last(data, model, edge_index, test_nodes, true_features):
 
     if is_continuous(data):
         return [to_r2(x_hat, x_true), to_rmse(x_hat, x_true)]
+    elif data == "pamap2":
+        return [to_r2(x_hat, x_true), to_rmse(x_hat, x_true)]
     else:
         k_list = [3, 5, 10] if data == 'steam' else [10, 20, 50]
         scores = []
@@ -236,7 +238,7 @@ def main():
             edge_index, num_nodes, num_features, num_classes, args.hidden_size,
             args.lamda, args.beta, args.layers, args.conv, args.dropout,
             args.x_type, args.x_loss, args.emb_norm, x_nodes, x_features,
-            args.dec_bias, num_columns)
+            args.dec_bias) #num_columns
 
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
@@ -271,7 +273,7 @@ def main():
             elif (args.data == 'steam'):
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=3)
             elif (args.data == 'pamap2'):
-                score = to_rmse(x_hat_[nodes], x_all[nodes], k=1)
+                score = to_rmse(x_hat_[nodes], x_all[nodes])
             else:
                 score = to_recall(x_hat_[nodes], x_all[nodes], k=10)
             out_list.append(score)
