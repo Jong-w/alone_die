@@ -182,7 +182,7 @@ def parse_args():
     parser.add_argument('--updates', type=int, default=10)
     parser.add_argument('--conv', type=str, default='gcn')
     parser.add_argument('--x-loss', type=str, default='gaussian')
-    parser.add_argument('--x-type', type=str, default='obs-diag') #degree
+    parser.add_argument('--x-type', type=str, default='degree')
     parser.add_argument('--feature_num', type=str, default=1)
     parser.add_argument('--node_num', type=str, default=2)
     return parser.parse_args()
