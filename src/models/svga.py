@@ -269,16 +269,20 @@ class SVGA(nn.Module):
 
         self.features = Features(edge_index, num_nodes, x_type, obs_nodes, obs_features)
         self.feature_dim = 2
-        self.encoding_time_1= nn.LSTM(input_size=100, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
-        self.encoding_time_2 = nn.LSTM(input_size=100, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
-        self.encoding_features_1 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
-        self.encoding_features_2 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
+        self.encoding_time = nn.Linear(100, 1).to('cuda')
+        #self.encoding_time = nn.LSTM(input_size=100, hidden_size=1, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        #self.encoding_time_1= nn.LSTM(input_size=100, hidden_size=1, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        #self.encoding_time_2 = nn.LSTM(input_size=100, hidden_size=1, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        self.encoding_features_1 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        self.encoding_features_2 = nn.LSTM(input_size=self.feature_dim, hidden_size=1, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
         #self.encoding_lstm_3 = nn.LSTM(input_size=1, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
 
-        self.decoding_time_1 = nn.LSTM(input_size=1, hidden_size=100, num_layers=1, bidirectional=False).to("cuda")
-        self.decoding_time_2 = nn.LSTM(input_size=1, hidden_size=100, num_layers=1, bidirectional=False).to("cuda")
-        self.decoding_features_1 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False).to("cuda")
-        self.decoding_features_2 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False).to("cuda")
+        self.decoding_time = nn.Linear(1, 100).to('cuda')
+        #self.decoding_time = nn.LSTM(input_size=1, hidden_size=100, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        #self.decoding_time_1 = nn.LSTM(input_size=1, hidden_size=100, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        #self.decoding_time_2 = nn.LSTM(input_size=1, hidden_size=100, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        self.decoding_features_1 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
+        self.decoding_features_2 = nn.LSTM(input_size=1, hidden_size=self.feature_dim, num_layers=1, bidirectional=False, batch_first=True).to("cuda")
         #self.decoding_lstm_3 = nn.LSTM(input_size=1, hidden_size=1, num_layers=1, bidirectional=False).to("cuda")
 
 
@@ -297,16 +301,23 @@ class SVGA(nn.Module):
         Run forward propagation.
         """
         #z = self.encoder_lstm(self.features())
-        x = self.obs_features.reshape(self.obs_features.shape[0], self.obs_features.shape[2], self.obs_features.shape[1])
-        z1, _ =  self.encoding_time_1(x[:, :self.feature_dim])
-        z2, _ = self.encoding_time_2(x[:, self.feature_dim:])
 
-        z1, _ = self.encoding_features_1(z1.squeeze())
-        z2, _ = self.encoding_features_2(z2.squeeze())
+
+        x = self.obs_features.reshape(self.obs_features.shape[2], self.obs_features.shape[0], self.obs_features.shape[1])
+
+        #z1, _ =  self.encoding_time_1(x[:, :self.feature_dim])
+        #z2, _ = self.encoding_time_2(x[:, self.feature_dim:])
+
+        z0 = self.encoding_time(x)
+        z0 = z0.reshape(z0.shape[1],z0.shape[0])
+
+        z1, _ = self.encoding_features_1(z0[:, :self.feature_dim])
+        z2, _ = self.encoding_features_2(z0[:, :self.feature_dim])
         #z, _ = self.encoding_lstm_1(self.obs_features[:, 2, :])
         z = torch.cat([z1, z2], dim=1)
 
-        z_ = Features(edge_index, self.num_nodes, self.x_type, self.obs_nodes, z)
+        #z_ = Features(edge_index, self.num_nodes, self.x_type, self.obs_nodes)
+        z_ = Features(edge_index, self.num_nodes, self.x_type, z)
         #z = z().unsqueeze(2)
 
         z = self.emb_norm(self.encoder(z_(), edge_index))
@@ -315,10 +326,12 @@ class SVGA(nn.Module):
         y_hat = self.y_decoder(z_dropped)
         x_hat_1, _ = self.decoding_features_1(x_hat[:, 0].unsqueeze(1))
         x_hat_2, _ = self.decoding_features_2(x_hat[:, 1].unsqueeze(1))
-        x_hat_1, _ = self.decoding_time_1(x_hat_1.unsqueeze(2))
-        x_hat_2, _ = self.decoding_time_2(x_hat_2.unsqueeze(2))
-
         x_hat = torch.cat([x_hat_1, x_hat_2], dim=1)
+        x_hat = self.decoding_time(x_hat.unsqueeze(2))
+        #x_hat_1, _ = self.decoding_time_1(x_hat_1.unsqueeze(2))
+        #x_hat_2, _ = self.decoding_time_2(x_hat_2.unsqueeze(2))
+
+        #x_hat = torch.cat([x_hat_1, x_hat_2], dim=1)
         x_hat = x_hat.reshape(x_hat.shape[0], x_hat.shape[2], x_hat.shape[1])
 
         if for_loss:
