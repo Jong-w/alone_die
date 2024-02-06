@@ -22,6 +22,7 @@ from sklearn.model_selection import train_test_split
 from torch_geometric import datasets
 from torch_geometric.utils import to_undirected
 from torch_sparse import SparseTensor
+import pandas as pd
 from scipy import sparse
 from scipy.interpolate import interp1d
 
@@ -122,11 +123,14 @@ def load_pamap2(root):
     data_hand = data[:, [3, 4]] #[3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
     data_chest = data[:, [20, 21]] #[20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36]
     data_ankle = data[:, [37, 38]] #[37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53]
+    data_behave = data[:, 1]
     np.isnan(np.nan_to_num(data_hand, copy=False))
     np.isnan(np.nan_to_num(data_chest, copy=False))
     np.isnan(np.nan_to_num(data_ankle, copy=False))
+    np.isnan(np.nan_to_num(data_behave, copy=False))
     #features = np.vstack((data_hand, data_chest, data_ankle)) #원래의 features
-    features = np.hstack((data_chest, data_ankle))
+    #features = np.hstack((data_chest, data_ankle, data_behave))
+    features = pd.concat([pd.DataFrame(data_chest), pd.DataFrame(data_ankle), pd.DataFrame(data_behave)], axis=1).to_numpy()
     #features = sparse.csr_matrix(features)
     features = torch.from_numpy(features).float()
     #labels = data[:, 1] #원래의 labels
